@@ -1,5 +1,7 @@
 from shiny import App, render, ui
 
+
+
 app_ui = ui.page_fluid(
     ui.panel_title("Hello Shiny!"),
     ui.input_slider("n", "N", 0, 100, 20),
@@ -10,7 +12,7 @@ app_ui = ui.page_fluid(
 def server(input, output, session):
     @render.text
     def txt():
-        return f"n*2 is {input.n() * 2}"
+        return f"n*3 is {input.n() * 3}"
 
 
 app = App(app_ui, server)
