@@ -95,7 +95,6 @@ def server(input, output, session):
             zoom=10,
             mapbox_style='streets',
         )
-        
         return fig
     
     @output
