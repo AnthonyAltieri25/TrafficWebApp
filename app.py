@@ -1,18 +1,12 @@
-from dash import Dash, html, dcc, dash_table, Input, Output
+from dash import Dash, html, dcc, dash_table, Input, Output, State,  callback_context, callback
 import dash_bootstrap_components as dbc
 import pandas as pd
-import datetime
-from datetime import date
+import datetime as dt
 
 # Initialize the app
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
 
-# Read in my data
-df = pd.read_csv('CrashData.csv', index_col=0)
-formatting = '%m/%d/%Y %H:%M'
-df['IncidentDateTime'] = pd.to_datetime(df['IncidentDateTime'], format=formatting)
-df['IncidentDateTime'] = df['IncidentDateTime'].apply(lambda x: x.strftime("%m/%d/%Y %I:%M%p"))
-#Create our time options
+# Create our time options
 HOURS = [f"{i:02d}" for i in range(1, 13)]
 MINUTES = [f"{i:02d}" for i in range(0, 60)]
 AMPM = ['AM', 'PM']
@@ -28,6 +22,13 @@ SIDEBAR_STYLE = {
     'background-color': '#f8f9fa'
 }
 
+# Where our dataframe is going to be stored
+# Note dataframe must be stored as dictionary
+store = dcc.Store(
+    id='df_store',
+    data=pd.read_csv('CrashData.csv', index_col=0).to_dict('records')
+)
+
 sidebar = html.Div(
     children=[
         html.H2("Filters"),
@@ -35,7 +36,7 @@ sidebar = html.Div(
         dbc.Row(
             html.H5("Time (HH:MM AM/PM)")
         ),
-        #Start time input
+        # Start time input
         dbc.Row(
           html.Label('Start')  
         ),
@@ -76,7 +77,7 @@ sidebar = html.Div(
                 style=dict(display='flex')
             ), 
         ),
-        #End time input
+        # End time input
         dbc.Row(
           html.Label('End')  
         ),
@@ -118,7 +119,7 @@ sidebar = html.Div(
             ), 
         ),
         html.Br(),
-        #Input date range
+        # Input date range
         dbc.Row(
             html.H5("Date")
         ),
@@ -126,8 +127,8 @@ sidebar = html.Div(
             html.Div(
                 dcc.DatePickerRange(
                     id='date_picker_range',
-                    min_date_allowed=date(2019, 1, 1),
-                    max_date_allowed=date(2022, 1, 30),
+                    min_date_allowed=dt.date(2019, 1, 1),
+                    max_date_allowed=dt.date(2022, 1, 30),
                     month_format='M-D-Y',
                     clearable=True
                 )
@@ -135,11 +136,12 @@ sidebar = html.Div(
         ),
         dbc.Row(
             html.Div(
+                children='TESTING',
                 id='filter_output'
             )
         ),
         html.Br(),
-        #Apply filter and reset buttons
+        # Apply filter and reset buttons
         dbc.Row(
             html.Div(
                 children=[
@@ -198,7 +200,7 @@ table = html.Div(
     children=[
         dash_table.DataTable(
             id='table_data',
-            data=df.to_dict('records'),
+            data=None,
         )
     ],
     style=CONTENT_STYLE
@@ -208,11 +210,12 @@ table = html.Div(
 app.layout = html.Div(
     children=[
         sidebar,
-        table
+        table,
+        store
     ]
 )
 
-#Function for handling enabling filter button based on filter inputs
+# Function for handling enabling filter button based on filter inputs
 @app.callback(
     Output('apply_filter_button', 'disabled'),
     Input('start_time_hour', 'value'),
@@ -226,18 +229,18 @@ app.layout = html.Div(
 )
 def enable_filter_button(start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
     disable_filter = True
-    #If all fields are completely filled out
+    # If all fields are completely filled out
     if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
         disable_filter = False
-    #If the time field is completely filled and date field is empty
+    # If the time field is completely filled and date field is empty
     elif None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm) and all(i == None for i in (start_date, end_date)):
         disable_filter = False
-    #If the date field is full but the time field is emtpy
+    # If the date field is full but the time field is emtpy
     elif None not in (start_date, end_date) and all(i == None for i in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm)):
         disable_filter = False
     return disable_filter
 
-#Function for updating button style based on if button is enabled
+# Function for updating button style based on if button is enabled
 @app.callback(
     Output('apply_filter_button', 'style'),
     Input('apply_filter_button', 'disabled')
@@ -257,7 +260,53 @@ def update_filter_button(disabled):
         style['opacity'] = 1
     return style
 
-#Function attatched to apply filter button to filter the dataframe
+# Function attatched to apply filter button to filter the dataframe
+@app.callback(
+    Output('df_store', 'data'),
+    Input('apply_filter_button', 'n_clicks'),
+    State('start_time_hour', 'value'),
+    State('start_time_minute', 'value'),
+    State('start_time_ampm', 'value'),
+    State('end_time_hour', 'value'),
+    State('end_time_minute', 'value'),
+    State('end_time_ampm', 'value'),
+    State('date_picker_range', 'start_date'),
+    State('date_picker_range', 'end_date'),
+    prevent_initial_call = True
+)
+def filter_data(m_clicks, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+    df = pd.read_csv('CrashData.csv', index_col=0)
+    formatting = '%m/%d/%Y %H:%M'
+    df['IncidentDateTime'] = pd.to_datetime(df['IncidentDateTime'], format=formatting)
+    # Filter by time
+    if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
+        # Get start/end times and convert them to datetime objects
+        formatting = '%I:%M%p'
+        start_time = dt.datetime.strptime(f'{start_hr}:{start_min}{start_ampm}', formatting)
+        end_time = dt.datetime.strptime(f'{end_hr}:{end_min}{end_ampm}', formatting)
+        # Filter the databased on the times
+        df = df[(df['IncidentDateTime'].dt.time >= start_time.time()) & (df['IncidentDateTime'].dt.time <= end_time.time())]
+    
+    return df.to_dict('records')
+
+# Updates the displayed table when the stored dataframe is changed
+@app.callback(
+    Output('table_data', 'data'),
+    Input('df_store', 'data'),
+)
+def update_table(data):
+    df = pd.DataFrame.from_dict(data)
+    formatting = ''
+    ctx = callback_context
+    #True if this is on initial call
+    if not ctx.triggered_id:
+        formatting = '%m/%d/%Y %H:%M'
+    else:
+        formatting = 'ISO8601'
+    df['IncidentDateTime'] = pd.to_datetime(df['IncidentDateTime'], format=formatting)
+    df['IncidentDateTime'] = df['IncidentDateTime'].apply(lambda x: x.strftime("%m/%d/%Y %I:%M%p"))
+    return df.to_dict('records')
+
 
 
 if __name__ == '__main__':
