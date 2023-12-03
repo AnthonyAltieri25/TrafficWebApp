@@ -137,6 +137,52 @@ sidebar = html.Div(
             html.Div(
                 id='filter_output'
             )
+        ),
+        html.Br(),
+        #Apply filter and reset buttons
+        dbc.Row(
+            html.Div(
+                children=[
+                    html.Div(
+                        html.Button(
+                            children='Apply Filter',
+                            id='apply_filter_button',
+                            disabled = True,
+                            style={
+                                'background-color': '#5dbea3',
+                                'color': '#FFFFFF',
+                                'border': 'none',
+                                'border-radius': 8,
+                                'width': '100%',
+                                'height': '3rem',
+                            }
+                        ),
+                        style = {
+                            'width': '50%'
+                        }
+                    ),
+                    html.Div(
+                        html.Button(
+                            children='Reset',
+                            id='reset_vals_button',
+                            style={
+                                'background-color': '#f44336',
+                                'color': '#FFFFFF',
+                                'border': 'none',
+                                'border-radius': 8,
+                                'width': '100%',
+                                'height': '3rem'
+                            }
+                        ),
+                        style={
+                            'width': '50%'
+                        }
+                    )
+                ],
+                style={
+                    'display': 'flex'
+                }
+            )
         )
     ],
     style=SIDEBAR_STYLE
@@ -153,7 +199,6 @@ table = html.Div(
         dash_table.DataTable(
             id='table_data',
             data=df.to_dict('records'),
-            #columns=[{"name": i, "id": i} for i in df.columns]
         )
     ],
     style=CONTENT_STYLE
@@ -167,8 +212,9 @@ app.layout = html.Div(
     ]
 )
 
+#Function for handling enabling filter button based on filter inputs
 @app.callback(
-    Output('filter_output', 'children'),
+    Output('apply_filter_button', 'disabled'),
     Input('start_time_hour', 'value'),
     Input('start_time_minute', 'value'),
     Input('start_time_ampm', 'value'),
@@ -178,19 +224,41 @@ app.layout = html.Div(
     Input('date_picker_range', 'start_date'),
     Input('date_picker_range', 'end_date')
 )
-def update_data(start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
-    
-    # Handles time input
-    # If there is a value in all time fields
-    if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
-        start_time_input = f"{start_hr}:{start_min}{start_ampm}"
-        end_time_input = f"{end_hr}:{end_min}{end_ampm}"
-    if (start_date is not None) and (end_date is not None):
-        pass
-    return "TESTING"
-        
-    
-        
+def enable_filter_button(start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+    disable_filter = True
+    #If all fields are completely filled out
+    if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+        disable_filter = False
+    #If the time field is completely filled and date field is empty
+    elif None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm) and all(i == None for i in (start_date, end_date)):
+        disable_filter = False
+    #If the date field is full but the time field is emtpy
+    elif None not in (start_date, end_date) and all(i == None for i in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm)):
+        disable_filter = False
+    return disable_filter
+
+#Function for updating button style based on if button is enabled
+@app.callback(
+    Output('apply_filter_button', 'style'),
+    Input('apply_filter_button', 'disabled')
+)
+def update_filter_button(disabled):
+    style={
+        'background-color': '#5dbea3',
+        'color': '#FFFFFF',
+        'border': 'none',
+        'border-radius': 8,
+        'width': '100%',
+        'height': '3rem',
+    }
+    if disabled:
+        style['opacity'] = .6
+    else:
+        style['opacity'] = 1
+    return style
+
+#Function attatched to apply filter button to filter the dataframe
+
 
 if __name__ == '__main__':
     app.run(debug=True)
