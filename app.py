@@ -307,6 +307,13 @@ def update_table(data):
     df['IncidentDateTime'] = df['IncidentDateTime'].apply(lambda x: x.strftime("%m/%d/%Y %I:%M%p"))
     return df.to_dict('records')
 
+'''@app.callback(
+    Output('table_data', 'data'),
+    Input('reset_vals_button', 'n_clicks')
+)
+def reset_vals():
+    pass'''
+
 
 
 if __name__ == '__main__':
