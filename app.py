@@ -1,10 +1,20 @@
 from dash import Dash, html, dcc, dash_table, Input, Output, State,  callback_context, callback
 import dash_bootstrap_components as dbc
+# For data
 import pandas as pd
 import datetime as dt
+# For graphing
+from MapBoxToken import TOKEN
+import plotly.express as px
+import plotly.graph_objects as go
+
+# Variables
+FILE = 'CrashData.csv'
 
 # Initialize the app
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
+# Set our access token
+px.set_mapbox_access_token(TOKEN)
 
 # Create our time options
 HOURS = [f"{i:02d}" for i in range(1, 13)]
@@ -26,7 +36,7 @@ SIDEBAR_STYLE = {
 # Note dataframe must be stored as dictionary
 store = dcc.Store(
     id='df_store',
-    data=pd.read_csv('CrashData.csv', index_col=0).to_dict('records')
+    data=pd.read_csv(FILE, index_col=0).to_dict('records')
 )
 
 sidebar = html.Div(
@@ -191,26 +201,44 @@ sidebar = html.Div(
 )
 
 CONTENT_STYLE = {
-    "margin-left": "18rem",
-    "margin-right": "2rem",
-    "padding": "2rem 1rem",
+    "margin-left": "17rem",
+    "margin-right": "0rem",
+    "padding": "1rem 1rem",
 }
 
-table = html.Div(
-    children=[
-        dash_table.DataTable(
-            id='table_data',
-            data=None,
-        )
-    ],
+# Main panel ui layout
+main_panel = html.Div(
+    children=dcc.Tabs(
+        id="tabs",
+        value='tab_value',
+        children=[
+            dcc.Tab(
+                label='Data Table',
+                children=[
+                    dash_table.DataTable(
+                        id='table_data'
+                    )
+                ]
+            ),
+            dcc.Tab(
+                label='Map',
+                children=[
+                    dcc.Graph(
+                        id='interactive_graph',
+                        style={'height': '86vh', 'width': '100%'}
+                    )
+                ]
+            )
+        ]
+    ),  
     style=CONTENT_STYLE
 )
 
-
+# Put all the UI components together
 app.layout = html.Div(
     children=[
         sidebar,
-        table,
+        main_panel,
         store
     ]
 )
@@ -275,7 +303,7 @@ def update_filter_button(disabled):
     prevent_initial_call = True
 )
 def filter_data(m_clicks, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
-    df = pd.read_csv('CrashData.csv', index_col=0)
+    df = pd.read_csv(FILE, index_col=0)
     formatting = '%m/%d/%Y %H:%M'
     df['IncidentDateTime'] = pd.to_datetime(df['IncidentDateTime'], format=formatting)
     # Filter by time
@@ -313,6 +341,30 @@ def update_table(data):
 )
 def reset_vals():
     pass'''
+    
+
+@app.callback(
+    Output('interactive_graph', 'figure'),
+    Input('table_data', 'data')
+)
+def create_map(data):
+    df = pd.DataFrame.from_dict(data)
+    
+    fig = px.scatter_mapbox(
+        data_frame=df,
+        lat='Latitude',
+        lon='Longitude',
+        hover_data=['IncidentInjurySeverityDesc', 'IncidentDateTime', 'IncidentID']
+    )
+    fig.update_layout(
+        mapbox=dict(
+            style='outdoors',
+        ),
+        margin=dict(l=0, r=0, t=0, b=0),
+        uirevision=True,
+        autosize=True,
+    )
+    return fig
 
 
 
