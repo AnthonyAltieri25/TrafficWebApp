@@ -1,4 +1,4 @@
-from dash import Dash, html, dcc, dash_table, Input, Output, State,  callback_context, callback
+from dash import Dash, html, dcc, dash_table, Input, Output, State,  callback_context, callback, no_update
 import dash_bootstrap_components as dbc
 # For data
 import pandas as pd
@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # Variables
-FILE = 'CrashData.csv'
+FILE = 'Trimmed.parquet'
 
 # Initialize the app
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -36,7 +36,7 @@ SIDEBAR_STYLE = {
 # Note dataframe must be stored as dictionary
 store = dcc.Store(
     id='df_store',
-    data=pd.read_csv(FILE, index_col=0).to_dict('records')
+    data=pd.read_parquet(FILE, engine='pyarrow').to_dict('records')
 )
 
 sidebar = html.Div(
@@ -303,9 +303,9 @@ def update_filter_button(disabled):
     prevent_initial_call = True
 )
 def filter_data(m_clicks, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
-    df = pd.read_csv(FILE, index_col=0)
-    formatting = '%m/%d/%Y %H:%M'
-    df['IncidentDateTime'] = pd.to_datetime(df['IncidentDateTime'], format=formatting)
+    df = pd.read_parquet(FILE, engine='pyarrow')
+    formatting = 'ISO8601'
+    df['time'] = pd.to_datetime(df['time'], format=formatting)
     # Filter by time
     if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
         # Get start/end times and convert them to datetime objects
@@ -313,9 +313,14 @@ def filter_data(m_clicks, start_hr, start_min, start_ampm, end_hr, end_min, end_
         start_time = dt.datetime.strptime(f'{start_hr}:{start_min}{start_ampm}', formatting)
         end_time = dt.datetime.strptime(f'{end_hr}:{end_min}{end_ampm}', formatting)
         # Filter the databased on the times
-        df = df[(df['IncidentDateTime'].dt.time >= start_time.time()) & (df['IncidentDateTime'].dt.time <= end_time.time())]
-    
-    return df.to_dict('records')
+        df = df[(df['time'].dt.time >= start_time.time()) & (df['time'].dt.time <= end_time.time())]
+        if df.empty:
+            print('No data within filter')
+            return no_update
+        else:
+            return df.to_dict('records')
+    else:
+        return no_update
 
 # Updates the displayed table when the stored dataframe is changed
 @app.callback(
@@ -324,37 +329,32 @@ def filter_data(m_clicks, start_hr, start_min, start_ampm, end_hr, end_min, end_
 )
 def update_table(data):
     df = pd.DataFrame.from_dict(data)
+    df['time'] = df['time']
     formatting = ''
     ctx = callback_context
     #True if this is on initial call
     if not ctx.triggered_id:
-        formatting = '%m/%d/%Y %H:%M'
+        formatting = 'ISO8601'
     else:
         formatting = 'ISO8601'
-    df['IncidentDateTime'] = pd.to_datetime(df['IncidentDateTime'], format=formatting)
-    df['IncidentDateTime'] = df['IncidentDateTime'].apply(lambda x: x.strftime("%m/%d/%Y %I:%M%p"))
+    df['time'] = pd.to_datetime(df['time'], format=formatting)
+    df['time'] = df['time'].apply(lambda x: x.strftime("%m/%d/%Y %I:%M%p"))
     return df.to_dict('records')
-
-'''@app.callback(
-    Output('table_data', 'data'),
-    Input('reset_vals_button', 'n_clicks')
-)
-def reset_vals():
-    pass'''
     
 
 @app.callback(
     Output('interactive_graph', 'figure'),
-    Input('table_data', 'data')
+    Input('df_store', 'data')
 )
 def create_map(data):
     df = pd.DataFrame.from_dict(data)
-    
     fig = px.scatter_mapbox(
         data_frame=df,
-        lat='Latitude',
-        lon='Longitude',
-        hover_data=['IncidentInjurySeverityDesc', 'IncidentDateTime', 'IncidentID']
+        lat='latitude',
+        lon='longitude',
+        hover_data=['speed', 'time'],
+        color='speed',
+        color_continuous_scale=px.colors.sequential.Inferno
     )
     fig.update_layout(
         mapbox=dict(

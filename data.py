@@ -42,6 +42,7 @@ def combine_data():
     my_data.to_parquet('TotalDataAug19.parquet', engine='pyarrow')
 
 df = pd.read_parquet('wejo/TotalDataAug19.parquet', engine='pyarrow')
-print(df.tail(10))
-print(df['speed'].max())
-print('Zeroes in speed:', (df['speed'] == 0).sum())
+df = df.sample(100000)
+df['speed'] = df['speed'].multiply(0.621371192).round(1)
+df.to_parquet('Trimmed.parquet', engine='pyarrow')
+print('done')
