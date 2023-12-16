@@ -6,7 +6,6 @@ import datetime as dt
 # For graphing
 from MapBoxToken import TOKEN
 import plotly.express as px
-import plotly.graph_objects as go
 
 # Variables
 FILE = 'Trimmed.parquet'
@@ -145,9 +144,9 @@ sidebar = html.Div(
             )
         ),
         dbc.Row(
-            html.Div(
+            html.H6(
                 children='TESTING',
-                id='filter_output'
+                id='test_output'
             )
         ),
         html.Br(),
@@ -226,6 +225,9 @@ main_panel = html.Div(
                     dcc.Graph(
                         id='interactive_graph',
                         style={'height': '86vh', 'width': '100%'}
+                    ),
+                    html.Pre(
+                        
                     )
                 ]
             )
@@ -253,9 +255,10 @@ app.layout = html.Div(
     Input('end_time_minute', 'value'),
     Input('end_time_ampm', 'value'),
     Input('date_picker_range', 'start_date'),
-    Input('date_picker_range', 'end_date')
+    Input('date_picker_range', 'end_date'),
+    Input('interactive_graph', 'selectedData')
 )
-def enable_filter_button(start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+def enable_filter_button(start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date, selected_data):
     disable_filter = True
     # If all fields are completely filled out
     if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
@@ -265,6 +268,8 @@ def enable_filter_button(start_hr, start_min, start_ampm, end_hr, end_min, end_a
         disable_filter = False
     # If the date field is full but the time field is emtpy
     elif None not in (start_date, end_date) and all(i == None for i in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm)):
+        disable_filter = False
+    elif selected_data is not None and 'range' in selected_data:
         disable_filter = False
     return disable_filter
 
@@ -293,6 +298,7 @@ def update_filter_button(disabled):
     Output('df_store', 'data'),
     Input('apply_filter_button', 'n_clicks'),
     Input('reset_vals_button', 'n_clicks'),
+    State('interactive_graph', 'selectedData'),
     State('start_time_hour', 'value'),
     State('start_time_minute', 'value'),
     State('start_time_ampm', 'value'),
@@ -303,13 +309,13 @@ def update_filter_button(disabled):
     State('date_picker_range', 'end_date'),
     prevent_initial_call = True
 )
-def filter_data(n_clicks_filter, n_clicks_reset, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+def filter_data(n_clicks_filter, n_clicks_reset, selected_data, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
     df = pd.read_parquet(FILE, engine='pyarrow')
     formatting = 'ISO8601'
     df['time'] = pd.to_datetime(df['time'], format=formatting)
+    # If the filter button was pressed
     if 'apply_filter_button' == ctx.triggered_id:
         # Filter by time
-        print('filter button')
         if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
             # Get start/end times and convert them to datetime objects
             formatting = '%I:%M%p'
@@ -319,12 +325,23 @@ def filter_data(n_clicks_filter, n_clicks_reset, start_hr, start_min, start_ampm
             df = df[(df['time'].dt.time >= start_time.time()) & (df['time'].dt.time <= end_time.time())]
             if df.empty:
                 return no_update
-            else:
-                return df.to_dict('records')
-        else:
-            return no_update
+        # Filter by region
+        if selected_data is not None and 'range' in selected_data:
+            print('filtering based on region')
+            print(selected_data['range'])
+            top_left, bottom_right = selected_data['range']['mapbox']
+            print(top_left, bottom_right)
+            df = df[
+                ((df['latitude'] >= bottom_right[1]) &
+                (df['latitude'] <= top_left[1]) &
+                (df['longitude'] >= top_left[0]) &
+                (df['longitude'] <= bottom_right[0]))
+            ]
+            if df.empty:
+                return no_update 
+        return df.to_dict('records')
+    # If the reset button was pressed
     elif 'reset_vals_button' == ctx.triggered_id:
-        print('reset vals button')
         return df.to_dict('records')
 
 # Updates the displayed table when the stored dataframe is changed
@@ -370,8 +387,6 @@ def create_map(data):
         autosize=True,
     )
     return fig
-
-
 
 if __name__ == '__main__':
     app.run(debug=True)
