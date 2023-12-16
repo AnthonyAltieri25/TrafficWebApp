@@ -1,4 +1,4 @@
-from dash import Dash, html, dcc, dash_table, Input, Output, State,  callback_context, callback, no_update
+from dash import Dash, html, dcc, dash_table, Input, Output, State,  callback_context, no_update, ctx
 import dash_bootstrap_components as dbc
 # For data
 import pandas as pd
@@ -292,6 +292,7 @@ def update_filter_button(disabled):
 @app.callback(
     Output('df_store', 'data'),
     Input('apply_filter_button', 'n_clicks'),
+    Input('reset_vals_button', 'n_clicks'),
     State('start_time_hour', 'value'),
     State('start_time_minute', 'value'),
     State('start_time_ampm', 'value'),
@@ -302,25 +303,29 @@ def update_filter_button(disabled):
     State('date_picker_range', 'end_date'),
     prevent_initial_call = True
 )
-def filter_data(m_clicks, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+def filter_data(n_clicks_filter, n_clicks_reset, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
     df = pd.read_parquet(FILE, engine='pyarrow')
     formatting = 'ISO8601'
     df['time'] = pd.to_datetime(df['time'], format=formatting)
-    # Filter by time
-    if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
-        # Get start/end times and convert them to datetime objects
-        formatting = '%I:%M%p'
-        start_time = dt.datetime.strptime(f'{start_hr}:{start_min}{start_ampm}', formatting)
-        end_time = dt.datetime.strptime(f'{end_hr}:{end_min}{end_ampm}', formatting)
-        # Filter the databased on the times
-        df = df[(df['time'].dt.time >= start_time.time()) & (df['time'].dt.time <= end_time.time())]
-        if df.empty:
-            print('No data within filter')
-            return no_update
+    if 'apply_filter_button' == ctx.triggered_id:
+        # Filter by time
+        print('filter button')
+        if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
+            # Get start/end times and convert them to datetime objects
+            formatting = '%I:%M%p'
+            start_time = dt.datetime.strptime(f'{start_hr}:{start_min}{start_ampm}', formatting)
+            end_time = dt.datetime.strptime(f'{end_hr}:{end_min}{end_ampm}', formatting)
+            # Filter the databased on the times
+            df = df[(df['time'].dt.time >= start_time.time()) & (df['time'].dt.time <= end_time.time())]
+            if df.empty:
+                return no_update
+            else:
+                return df.to_dict('records')
         else:
-            return df.to_dict('records')
-    else:
-        return no_update
+            return no_update
+    elif 'reset_vals_button' == ctx.triggered_id:
+        print('reset vals button')
+        return df.to_dict('records')
 
 # Updates the displayed table when the stored dataframe is changed
 @app.callback(
