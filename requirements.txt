@@ -1,6 +1,0 @@
-#pipreqs --savepath=requirements.in --use-local && pip-compile
-
-dash==2.14.1
-dash_bootstrap_components==1.5.0
-plotly==5.18.0
-pyarrow==14.0.1
