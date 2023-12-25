@@ -6,14 +6,15 @@ import datetime as dt
 # For graphing
 from MapBoxToken import TOKEN
 import plotly.express as px
+import plotly.graph_objects as go
 
 # Variables
 FILE = 'Trimmed.parquet'
+COLUMNS =  ['time', 'speed', 'latitude', 'longitude']
+temp_df = pd.DataFrame(columns=COLUMNS)
 
 # Initialize the app
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
-# Set our access token
-px.set_mapbox_access_token(TOKEN)
 
 # Create our time options
 HOURS = [f"{i:02d}" for i in range(1, 13)]
@@ -35,7 +36,7 @@ SIDEBAR_STYLE = {
 # Note dataframe must be stored as dictionary
 store = dcc.Store(
     id='df_store',
-    data=pd.read_parquet(FILE, engine='pyarrow').to_dict('records')
+    data=None
 )
 
 sidebar = html.Div(
@@ -150,14 +151,14 @@ sidebar = html.Div(
             )
         ),
         html.Br(),
-        # Apply filter and reset buttons
+        # Generate data and reset buttons
         dbc.Row(
             html.Div(
                 children=[
                     html.Div(
                         html.Button(
-                            children='Apply Filter',
-                            id='apply_filter_button',
+                            children='Generate Data',
+                            id='generate_data_button',
                             disabled = True,
                             style={
                                 'background-color': '#5dbea3',
@@ -215,7 +216,13 @@ main_panel = html.Div(
                 label='Data Table',
                 children=[
                     dash_table.DataTable(
-                        id='table_data'
+                        id='table_data',
+                        columns=[{'name': col, 'id': col} for col in temp_df.columns],
+                        style_data={
+                            'whiteSpace': 'normal',
+                            'height': 'auto',
+                        },
+                        style_cell={'textAlign': 'left'},
                     )
                 ]
             ),
@@ -247,7 +254,7 @@ app.layout = html.Div(
 
 # Function for handling enabling filter button based on filter inputs
 @app.callback(
-    Output('apply_filter_button', 'disabled'),
+    Output('generate_data_button', 'disabled'),
     Input('start_time_hour', 'value'),
     Input('start_time_minute', 'value'),
     Input('start_time_ampm', 'value'),
@@ -258,7 +265,7 @@ app.layout = html.Div(
     Input('date_picker_range', 'end_date'),
     Input('interactive_graph', 'selectedData')
 )
-def enable_filter_button(start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date, selected_data):
+def enable_generate_data_button(start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date, selected_data):
     disable_filter = True
     # If all fields are completely filled out
     if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
@@ -269,14 +276,15 @@ def enable_filter_button(start_hr, start_min, start_ampm, end_hr, end_min, end_a
     # If the date field is full but the time field is emtpy
     elif None not in (start_date, end_date) and all(i == None for i in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm)):
         disable_filter = False
+    # If there is data box selected
     elif selected_data is not None and 'range' in selected_data:
         disable_filter = False
     return disable_filter
 
 # Function for updating button style based on if button is enabled
 @app.callback(
-    Output('apply_filter_button', 'style'),
-    Input('apply_filter_button', 'disabled')
+    Output('generate_data_button', 'style'),
+    Input('generate_data_button', 'disabled')
 )
 def update_filter_button(disabled):
     style={
@@ -296,7 +304,7 @@ def update_filter_button(disabled):
 # Function attatched to apply filter button to filter the dataframe
 @app.callback(
     Output('df_store', 'data'),
-    Input('apply_filter_button', 'n_clicks'),
+    Input('generate_data_button', 'n_clicks'),
     Input('reset_vals_button', 'n_clicks'),
     State('interactive_graph', 'selectedData'),
     State('start_time_hour', 'value'),
@@ -309,12 +317,12 @@ def update_filter_button(disabled):
     State('date_picker_range', 'end_date'),
     prevent_initial_call = True
 )
-def filter_data(n_clicks_filter, n_clicks_reset, selected_data, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+def generate_data(n_clicks_filter, n_clicks_reset, selected_data, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
     df = pd.read_parquet(FILE, engine='pyarrow')
     formatting = 'ISO8601'
     df['time'] = pd.to_datetime(df['time'], format=formatting)
     # If the filter button was pressed
-    if 'apply_filter_button' == ctx.triggered_id:
+    if 'generate_data_button' == ctx.triggered_id:
         # Filter by time
         if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
             # Get start/end times and convert them to datetime objects
@@ -327,10 +335,7 @@ def filter_data(n_clicks_filter, n_clicks_reset, selected_data, start_hr, start_
                 return no_update
         # Filter by region
         if selected_data is not None and 'range' in selected_data:
-            print('filtering based on region')
-            print(selected_data['range'])
             top_left, bottom_right = selected_data['range']['mapbox']
-            print(top_left, bottom_right)
             df = df[
                 ((df['latitude'] >= bottom_right[1]) &
                 (df['latitude'] <= top_left[1]) &
@@ -342,7 +347,7 @@ def filter_data(n_clicks_filter, n_clicks_reset, selected_data, start_hr, start_
         return df.to_dict('records')
     # If the reset button was pressed
     elif 'reset_vals_button' == ctx.triggered_id:
-        return df.to_dict('records')
+        return None
 
 # Updates the displayed table when the stored dataframe is changed
 @app.callback(
@@ -350,18 +355,21 @@ def filter_data(n_clicks_filter, n_clicks_reset, selected_data, start_hr, start_
     Input('df_store', 'data'),
 )
 def update_table(data):
-    df = pd.DataFrame.from_dict(data)
-    df['time'] = df['time']
-    formatting = ''
-    ctx = callback_context
-    #True if this is on initial call
-    if not ctx.triggered_id:
-        formatting = 'ISO8601'
+    if data is not None:
+        df = pd.DataFrame.from_dict(data)
+        df['time'] = df['time']
+        formatting = ''
+        ctx = callback_context
+        #True if this is on initial call
+        if not ctx.triggered_id:
+            formatting = 'ISO8601'
+        else:
+            formatting = 'ISO8601'
+        df['time'] = pd.to_datetime(df['time'], format=formatting)
+        df['time'] = df['time'].apply(lambda x: x.strftime("%m/%d/%Y %I:%M%p"))
+        return df.to_dict('records')
     else:
-        formatting = 'ISO8601'
-    df['time'] = pd.to_datetime(df['time'], format=formatting)
-    df['time'] = df['time'].apply(lambda x: x.strftime("%m/%d/%Y %I:%M%p"))
-    return df.to_dict('records')
+        return []
     
 
 @app.callback(
@@ -369,24 +377,70 @@ def update_table(data):
     Input('df_store', 'data')
 )
 def create_map(data):
-    df = pd.DataFrame.from_dict(data)
-    fig = px.scatter_mapbox(
-        data_frame=df,
-        lat='latitude',
-        lon='longitude',
-        hover_data=['speed', 'time'],
-        color='speed',
-        color_continuous_scale=px.colors.sequential.Inferno
-    )
-    fig.update_layout(
-        mapbox=dict(
-            style='outdoors',
-        ),
-        margin=dict(l=0, r=0, t=0, b=0),
-        uirevision=True,
-        autosize=True,
-    )
-    return fig
+    if data is not None:
+        df = pd.DataFrame.from_dict(data)
+
+        # Map/data settings
+        trace = go.Scattermapbox(
+            lat=df['latitude'],
+            lon=df['longitude'],
+            mode='markers',
+            marker=dict(
+                color=df['speed'],
+                colorscale='Inferno',
+                colorbar=dict(title='Speed'),
+                opacity=1
+            ),
+            text= '<b>Speed:</b> ' + df['speed'].astype(str) + 'mph<br><b>Time:</b> ' + df['time'].astype(str),
+            hoverinfo='text'
+        )
+        
+        # Calculate the bounding box
+        min_lat, max_lat = min(df['latitude']), max(df['latitude'])
+        min_lon, max_lon = min(df['longitude']), max(df['longitude'])
+        
+        # Layout settings
+        layout = go.Layout(
+            mapbox=dict(
+                style="outdoors",
+                center=dict(lat=(min_lat + max_lat) / 2, lon=(min_lon + max_lon) / 2),
+                zoom=5,
+                accesstoken=TOKEN 
+            ),
+            margin=dict(l=0, r=0, t=0, b=0),
+            uirevision=True,
+            autosize=True,
+        )
+    
+        fig = go.Figure(data=[trace], layout=layout)
+    
+        return fig
+    else:
+        center_lat = 42.9
+        center_lon = -75.2
+        # Create a map with a singular invisible point so that box selection is enabled
+        trace = go.Scattermapbox(
+            lat=[center_lat],
+            lon=[center_lon],
+            mode='markers',
+            marker=dict(size=0)
+        )
+        
+        # Create layout for the Mapbox map
+        layout = go.Layout(
+            mapbox=dict(
+                style="outdoors",
+                center=dict(lat=center_lat, lon=center_lon),
+                zoom=6.1,
+                accesstoken=TOKEN
+            ),
+            margin=dict(l=0, r=0, t=0, b=0),
+            uirevision=True,
+            autosize=True,
+        )
+        
+        fig = go.Figure(data=[trace], layout=layout)
+        return fig
 
 if __name__ == '__main__':
     app.run(debug=True)
