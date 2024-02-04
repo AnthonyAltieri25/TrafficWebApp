@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # Variables
-FILE = 'Trimmed.parquet'
+FILE = 'wejo\TotalDataAug19Optimzed.parquet'
 COLUMNS =  ['time', 'speed', 'latitude', 'longitude']
 temp_df = pd.DataFrame(columns=COLUMNS)
 
@@ -151,10 +151,13 @@ sidebar = html.Div(
             )
         ),
         html.Br(),
-        # Generate data and reset buttons
+
+        # BUTTONS
+
         dbc.Row(
             html.Div(
                 children=[
+                    # Generate Data button
                     html.Div(
                         html.Button(
                             children='Generate Data',
@@ -173,6 +176,7 @@ sidebar = html.Div(
                             'width': '50%'
                         }
                     ),
+                    # Reset Button
                     html.Div(
                         html.Button(
                             children='Reset',
@@ -194,6 +198,23 @@ sidebar = html.Div(
                 style={
                     'display': 'flex'
                 }
+            )
+        ),
+        # Filter current selection button
+        dbc.Row(
+            html.Div(
+                html.Button(
+                    children='Filter Current Selection',
+                    id='filter_current_button',
+                    style={
+                        'background-color': '#24a0ed',
+                        'color': '#FFFFFF',
+                        'border': 'none',
+                        'border-radius': 8,
+                        'width': '100%',
+                        'height': '3rem'
+                    }
+                )
             )
         )
     ],
@@ -301,11 +322,65 @@ def update_filter_button(disabled):
         style['opacity'] = 1
     return style
 
-# Function attatched to apply filter button to filter the dataframe
+# Function for handling enabling filter current button based on filter inputs and df_store
+@app.callback(
+    Output('filter_current_button', 'disabled'),
+    Input('start_time_hour', 'value'),
+    Input('start_time_minute', 'value'),
+    Input('start_time_ampm', 'value'),
+    Input('end_time_hour', 'value'),
+    Input('end_time_minute', 'value'),
+    Input('end_time_ampm', 'value'),
+    Input('date_picker_range', 'start_date'),
+    Input('date_picker_range', 'end_date'),
+    Input('interactive_graph', 'selectedData'),
+    Input('df_store', 'data')
+)
+def enable_generate_data_button(start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date, selected_data, data):
+    disable_filter = True
+    # If data has been generated
+    if data != None:
+        # If all fields are completely filled out
+        if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+            disable_filter = False
+        # If the time field is completely filled and date field is empty
+        elif None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm) and all(i == None for i in (start_date, end_date)):
+            disable_filter = False
+        # If the date field is full but the time field is emtpy
+        elif None not in (start_date, end_date) and all(i == None for i in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm)):
+            disable_filter = False
+        # If there is data box selected
+        elif selected_data is not None and 'range' in selected_data:
+            disable_filter = False
+    return disable_filter
+
+# Function for updating filter current button style based on if button is enabled
+@app.callback(
+    Output('filter_current_button', 'style'),
+    Input('filter_current_button', 'disabled')
+)
+def update_filter_button(disabled):
+    style={
+        'background-color': '#24a0ed',
+        'color': '#FFFFFF',
+        'border': 'none',
+        'border-radius': 8,
+        'width': '100%',
+        'height': '3rem',
+    }
+    if disabled:
+        style['opacity'] = .6
+    else:
+        style['opacity'] = 1
+    return style
+
+# Function attatched to generate data and filter current button to filter the dataframe
 @app.callback(
     Output('df_store', 'data'),
     Input('generate_data_button', 'n_clicks'),
     Input('reset_vals_button', 'n_clicks'),
+    Input('filter_current_button', 'n_clicks'),
+    State('df_store', 'data'),
     State('interactive_graph', 'selectedData'),
     State('start_time_hour', 'value'),
     State('start_time_minute', 'value'),
@@ -317,12 +392,16 @@ def update_filter_button(disabled):
     State('date_picker_range', 'end_date'),
     prevent_initial_call = True
 )
-def generate_data(n_clicks_filter, n_clicks_reset, selected_data, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
-    df = pd.read_parquet(FILE, engine='pyarrow')
+def generate_data(n_clicks_filter, n_clicks_reset, n_clicks_filter_current, stored_data, selected_data, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+    df = None
+    if 'filter_current_button' == ctx.triggered_id:
+        df = pd.DataFrame.from_dict(stored_data)
+    else:
+        df = pd.read_parquet(FILE, engine='pyarrow')
     formatting = 'ISO8601'
     df['time'] = pd.to_datetime(df['time'], format=formatting)
     # If the filter button was pressed
-    if 'generate_data_button' == ctx.triggered_id:
+    if 'generate_data_button' or 'filter_current_button' == ctx.triggered_id:
         # Filter by time
         if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
             # Get start/end times and convert them to datetime objects

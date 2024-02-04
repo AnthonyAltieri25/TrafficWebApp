@@ -27,7 +27,9 @@ def combine_data():
     my_data = pd.DataFrame(columns=columns)
     # Loop through each data file
     for i in os.listdir('wejo/2022-08-19'):
+        print(i)
         for j in os.listdir('wejo/2022-08-19/' + i):
+            print(j)
             # Get each file
             df = pd.read_parquet('wejo/2022-08-19/' + i + '/' + j, engine='pyarrow')
             temp = pd.DataFrame(columns=columns)
@@ -41,8 +43,19 @@ def combine_data():
             
     my_data.to_parquet('TotalDataAug19.parquet', engine='pyarrow')
 
-df = pd.read_parquet('wejo/TotalDataAug19.parquet', engine='pyarrow')
+'''df = pd.read_parquet('wejo/TotalDataAug19.parquet', engine='pyarrow')
 df = df.sample(100000)
 df['speed'] = df['speed'].multiply(0.621371192).round(1)
 df.to_parquet('Trimmed.parquet', engine='pyarrow')
-print('done')
+print('done')'''
+
+'''df = pd.read_parquet('wejo/TotalDataAug19.parquet', engine='pyarrow')
+df['speed'] = df['speed'].astype('float32')
+df['latitude'] = df['latitude'].astype('float32')
+df['longitude'] = df['longitude'].astype('float32')
+df.to_parquet(path='wejo/TotalDataAug19Optimzed.parquet', engine='pyarrow')
+print('done')'''
+
+
+df = pd.read_parquet('wejo\TotalDataAug19Optimzed.parquet', engine='pyarrow')
+print(len(df))
