@@ -39,6 +39,11 @@ store = dcc.Store(
     data=None
 )
 
+cache_store = dcc.Store(
+    id='cache_store',
+    data=None
+)
+
 sidebar = html.Div(
     children=[
         html.H2("Filters"),
@@ -269,7 +274,8 @@ app.layout = html.Div(
     children=[
         sidebar,
         main_panel,
-        store
+        store,
+        cache_store
     ]
 )
 
@@ -374,11 +380,51 @@ def update_filter_button(disabled):
         style['opacity'] = 1
     return style
 
-# Function attatched to generate data and filter current button to filter the dataframe
+# Function to handle generating fresh data
 @app.callback(
-    Output('df_store', 'data'),
+    Output('df_store', 'data', allow_duplicate=True),
+    Output('cache_store', 'data', allow_duplicate=True),
     Input('generate_data_button', 'n_clicks'),
-    Input('reset_vals_button', 'n_clicks'),
+    State('interactive_graph', 'selectedData'),
+    State('start_time_hour', 'value'),
+    State('start_time_minute', 'value'),
+    State('start_time_ampm', 'value'),
+    State('end_time_hour', 'value'),
+    State('end_time_minute', 'value'),
+    State('end_time_ampm', 'value'),
+    State('date_picker_range', 'start_date'),
+    State('date_picker_range', 'end_date'),
+    prevent_initial_call = True
+)
+def generate_data(n_clicks_generate, selected_data, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+    df = pd.read_parquet(FILE, engine='pyarrow')
+    # Filter by region
+    if selected_data is not None and 'range' in selected_data:
+        top_left, bottom_right = selected_data['range']['mapbox']
+        df = df[
+            ((df['latitude'] >= bottom_right[1]) &
+            (df['latitude'] <= top_left[1]) &
+            (df['longitude'] >= top_left[0]) &
+            (df['longitude'] <= bottom_right[0]))
+        ]
+        if df.empty:
+            return no_update, no_update
+    # Filter by time
+    if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
+        df['time'] = pd.to_datetime(df['time'], format='ISO8601')
+        # Get start/end times and convert them to datetime objects
+        formatting = '%I:%M%p'
+        start_time = dt.datetime.strptime(f'{start_hr}:{start_min}{start_ampm}', formatting)
+        end_time = dt.datetime.strptime(f'{end_hr}:{end_min}{end_ampm}', formatting)
+        # Filter the databased on the times
+        df = df[(df['time'].dt.time >= start_time.time()) & (df['time'].dt.time <= end_time.time())]
+        if df.empty:
+            return no_update, no_update    
+    return df.to_dict('records'), df.to_dict('records')
+
+# Function to handle the filter current button
+@app.callback(
+    Output('df_store', 'data', allow_duplicate=True),
     Input('filter_current_button', 'n_clicks'),
     State('df_store', 'data'),
     State('interactive_graph', 'selectedData'),
@@ -392,41 +438,50 @@ def update_filter_button(disabled):
     State('date_picker_range', 'end_date'),
     prevent_initial_call = True
 )
-def generate_data(n_clicks_filter, n_clicks_reset, n_clicks_filter_current, stored_data, selected_data, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
-    df = None
-    if 'filter_current_button' == ctx.triggered_id:
-        df = pd.DataFrame.from_dict(stored_data)
-    else:
-        df = pd.read_parquet(FILE, engine='pyarrow')
-    formatting = 'ISO8601'
-    df['time'] = pd.to_datetime(df['time'], format=formatting)
-    # If the filter button was pressed
-    if 'generate_data_button' or 'filter_current_button' == ctx.triggered_id:
-        # Filter by time
-        if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
-            # Get start/end times and convert them to datetime objects
-            formatting = '%I:%M%p'
-            start_time = dt.datetime.strptime(f'{start_hr}:{start_min}{start_ampm}', formatting)
-            end_time = dt.datetime.strptime(f'{end_hr}:{end_min}{end_ampm}', formatting)
-            # Filter the databased on the times
-            df = df[(df['time'].dt.time >= start_time.time()) & (df['time'].dt.time <= end_time.time())]
-            if df.empty:
-                return no_update
-        # Filter by region
-        if selected_data is not None and 'range' in selected_data:
-            top_left, bottom_right = selected_data['range']['mapbox']
-            df = df[
-                ((df['latitude'] >= bottom_right[1]) &
-                (df['latitude'] <= top_left[1]) &
-                (df['longitude'] >= top_left[0]) &
-                (df['longitude'] <= bottom_right[0]))
-            ]
-            if df.empty:
-                return no_update 
-        return df.to_dict('records')
-    # If the reset button was pressed
-    elif 'reset_vals_button' == ctx.triggered_id:
-        return None
+def filter_data(n_clicks_filter, stored_data, selected_data, start_hr, start_min, start_ampm, end_hr, end_min, end_ampm, start_date, end_date):
+    df = pd.DataFrame.from_dict(stored_data)
+    # Filter by region
+    if selected_data is not None and 'range' in selected_data:
+        top_left, bottom_right = selected_data['range']['mapbox']
+        df = df[
+            ((df['latitude'] >= bottom_right[1]) &
+            (df['latitude'] <= top_left[1]) &
+            (df['longitude'] >= top_left[0]) &
+            (df['longitude'] <= bottom_right[0]))
+        ]
+        if df.empty:
+            return no_update
+    # Filter by time
+    if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
+        df['time'] = pd.to_datetime(df['time'], format='ISO8601')
+        # Get start/end times and convert them to datetime objects
+        formatting = '%I:%M%p'
+        start_time = dt.datetime.strptime(f'{start_hr}:{start_min}{start_ampm}', formatting)
+        end_time = dt.datetime.strptime(f'{end_hr}:{end_min}{end_ampm}', formatting)
+        # Filter the databased on the times
+        df = df[(df['time'].dt.time >= start_time.time()) & (df['time'].dt.time <= end_time.time())]
+        if df.empty:
+            return no_update
+    return df.to_dict('records')
+
+# Function to handle resetting data
+@app.callback(
+    Output('df_store', 'data', allow_duplicate=True),
+    Output('cache_store', 'data', allow_duplicate=True),
+    Input('reset_vals_button', 'n_clicks'),
+    State('df_store', 'data'),
+    State('cache_store', 'data'),
+    prevent_initial_call=True
+)
+def reset_vals(n_clicks_reset, stored_data, cached_data):
+    # If the filter data is different than the cached data from initial generation
+    # Set the stored data to the cached data and don't update cached data
+    if stored_data != cached_data:
+        return cached_data, no_update
+    # If the filter data is the same as the cached data from intial generation
+    # Set both of them to none (reset the map/table completely)
+    elif stored_data == cached_data:
+        return None, None
 
 # Updates the displayed table when the stored dataframe is changed
 @app.callback(
