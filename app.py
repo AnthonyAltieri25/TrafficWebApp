@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 FILE = 'wejo\TotalDataAug19Optimzed.parquet'
 COLUMNS =  ['time', 'speed', 'latitude', 'longitude']
 temp_df = pd.DataFrame(columns=COLUMNS)
+ERROR_MESSAGE = 'No data fit selected criteria'
 
 # Initialize the app
 app = Dash(external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -149,10 +150,11 @@ sidebar = html.Div(
                 )
             )
         ),
+        # Error Output
         dbc.Row(
             html.H6(
-                children='TESTING',
-                id='test_output'
+                children='',
+                id='error_output'
             )
         ),
         html.Br(),
@@ -384,6 +386,7 @@ def update_filter_button(disabled):
 @app.callback(
     Output('df_store', 'data', allow_duplicate=True),
     Output('cache_store', 'data', allow_duplicate=True),
+    Output('error_output', 'children', allow_duplicate=True),
     Input('generate_data_button', 'n_clicks'),
     State('interactive_graph', 'selectedData'),
     State('start_time_hour', 'value'),
@@ -408,7 +411,7 @@ def generate_data(n_clicks_generate, selected_data, start_hr, start_min, start_a
             (df['longitude'] <= bottom_right[0]))
         ]
         if df.empty:
-            return no_update, no_update
+            return no_update, no_update, ERROR_MESSAGE
     # Filter by time
     if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
         df['time'] = pd.to_datetime(df['time'], format='ISO8601')
@@ -419,12 +422,13 @@ def generate_data(n_clicks_generate, selected_data, start_hr, start_min, start_a
         # Filter the databased on the times
         df = df[(df['time'].dt.time >= start_time.time()) & (df['time'].dt.time <= end_time.time())]
         if df.empty:
-            return no_update, no_update    
-    return df.to_dict('records'), df.to_dict('records')
+            return no_update, no_update, ERROR_MESSAGE
+    return df.to_dict('records'), df.to_dict('records'), ''
 
 # Function to handle the filter current button
 @app.callback(
     Output('df_store', 'data', allow_duplicate=True),
+    Output('error_output', 'children', allow_duplicate=True),
     Input('filter_current_button', 'n_clicks'),
     State('df_store', 'data'),
     State('interactive_graph', 'selectedData'),
@@ -450,7 +454,7 @@ def filter_data(n_clicks_filter, stored_data, selected_data, start_hr, start_min
             (df['longitude'] <= bottom_right[0]))
         ]
         if df.empty:
-            return no_update
+            return no_update, ERROR_MESSAGE
     # Filter by time
     if None not in (start_hr, start_min, start_ampm, end_hr, end_min, end_ampm):
         df['time'] = pd.to_datetime(df['time'], format='ISO8601')
@@ -461,13 +465,14 @@ def filter_data(n_clicks_filter, stored_data, selected_data, start_hr, start_min
         # Filter the databased on the times
         df = df[(df['time'].dt.time >= start_time.time()) & (df['time'].dt.time <= end_time.time())]
         if df.empty:
-            return no_update
-    return df.to_dict('records')
+            return no_update, ERROR_MESSAGE
+    return df.to_dict('records'), ''
 
 # Function to handle resetting data
 @app.callback(
     Output('df_store', 'data', allow_duplicate=True),
     Output('cache_store', 'data', allow_duplicate=True),
+    Output('error_output', 'children', allow_duplicate=True),
     Input('reset_vals_button', 'n_clicks'),
     State('df_store', 'data'),
     State('cache_store', 'data'),
@@ -477,11 +482,11 @@ def reset_vals(n_clicks_reset, stored_data, cached_data):
     # If the filter data is different than the cached data from initial generation
     # Set the stored data to the cached data and don't update cached data
     if stored_data != cached_data:
-        return cached_data, no_update
+        return cached_data, no_update, ''
     # If the filter data is the same as the cached data from intial generation
     # Set both of them to none (reset the map/table completely)
     elif stored_data == cached_data:
-        return None, None
+        return None, None, ''
 
 # Updates the displayed table when the stored dataframe is changed
 @app.callback(
@@ -539,7 +544,7 @@ def create_map(data):
                 style="outdoors",
                 center=dict(lat=(min_lat + max_lat) / 2, lon=(min_lon + max_lon) / 2),
                 zoom=5,
-                accesstoken=TOKEN 
+                accesstoken=TOKEN,
             ),
             margin=dict(l=0, r=0, t=0, b=0),
             uirevision=True,
@@ -566,7 +571,7 @@ def create_map(data):
                 style="outdoors",
                 center=dict(lat=center_lat, lon=center_lon),
                 zoom=6.1,
-                accesstoken=TOKEN
+                accesstoken=TOKEN,
             ),
             margin=dict(l=0, r=0, t=0, b=0),
             uirevision=True,
